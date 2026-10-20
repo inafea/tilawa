@@ -72,4 +72,6 @@ dependencies {
     implementation("androidx.media3:media3-datasource:$media3")
     implementation("androidx.media3:media3-database:$media3")
     implementation("com.google.guava:guava:33.3.1-android")
+
+    testImplementation("junit:junit:4.13.2")
 }
