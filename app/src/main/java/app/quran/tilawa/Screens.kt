@@ -175,7 +175,8 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                 SurahRow(
                     surah = s,
                     playing = vm.playingSurah == s.number,
-                    onClick = { vm.openSurah(s.number) },
+                    // فتح السورة يبدأ تلاوتها من أولها حتى لو كانت سورة أخرى قيد التشغيل
+                    onClick = { vm.openSurah(s.number); vm.playFrom(s.number, 1) },
                 )
             }
         }

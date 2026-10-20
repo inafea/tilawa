@@ -1,20 +1,35 @@
 package app.quran.tilawa
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -35,8 +50,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -44,30 +59,41 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 // =====================================================================
 // شاشة المصحف: صفحات مصحف المدينة (٦٠٤) يُقلَّب بينها بالسحب
 // =====================================================================
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MushafScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
     val pager = rememberPagerState(initialPage = vm.currentPage - 1) { Pages.COUNT }
@@ -89,8 +115,37 @@ fun MushafScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
         if (j.animate) pager.animateScrollToPage(j.page - 1) else pager.scrollToPage(j.page - 1)
     }
 
-    Scaffold(
-        topBar = {
+    // وضع ملء الشاشة: الأشرطة مخفية، والضغط على الصفحة يظهرها ويخفيها
+    var chrome by rememberSaveable { mutableStateOf(false) }
+    val toggleChrome = { chrome = !chrome }
+    val view = LocalView.current
+    DisposableEffect(chrome) {
+        val controller = view.context.findActivity()?.window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (chrome) controller?.show(WindowInsetsCompat.Type.systemBars()) else controller?.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // الأشرطة تظهر فوق الصفحة ولا تزاحمها، ومساحة الصفحة ثابتة (لا تتأثر بظهور أشرطة النظام)
+        // حتى لا يتغير حجم الخط عند كل ضغطة
+        HorizontalPager(
+            state = pager,
+            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBarsIgnoringVisibility),
+            beyondViewportPageCount = 1,
+            key = { it },
+        ) { i ->
+            val page = i + 1
+            LaunchedEffect(page) { vm.loadPage(page) }
+            MushafPage(vm, page, toggleChrome)
+        }
+
+        AnimatedVisibility(
+            visible = chrome,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+        ) {
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = { vm.closeSurah() }) {
@@ -130,51 +185,61 @@ fun MushafScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                 },
                 colors = greenBarColors(),
             )
-        },
-        bottomBar = { PlayerBar(vm, onTitleClick = null) },
-        snackbarHost = { SnackbarHost(snackbar) },
-        containerColor = MaterialTheme.colorScheme.background,
-    ) { padding ->
-        // في الواجهة العربية ينتقل السحب لليمين إلى الصفحة التالية كما في المصحف الورقي
-        HorizontalPager(
-            state = pager,
-            modifier = Modifier.fillMaxSize().padding(padding),
-            beyondViewportPageCount = 1,
-            key = { it },
-        ) { i ->
-            val page = i + 1
-            LaunchedEffect(page) { vm.loadPage(page) }
-            MushafPage(vm, page)
+        }
+
+        Column(Modifier.align(Alignment.BottomCenter)) {
+            SnackbarHost(snackbar, Modifier.then(if (chrome) Modifier else Modifier.navigationBarsPadding()))
+            AnimatedVisibility(
+                visible = chrome,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+            ) {
+                PlayerBar(vm, onTitleClick = null)
+            }
         }
     }
 }
 
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 @Composable
-private fun MushafPage(vm: QuranViewModel, page: Int) {
+private fun MushafPage(vm: QuranViewModel, page: Int, onTap: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val ayahs = vm.pages[page]
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) }) {
         when {
             ayahs != null -> Column(
                 Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
                 PageHeader(ayahs)
-                Column(
-                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    pageSegments(ayahs).forEach { seg ->
-                        if (seg.first().numberInSurah == 1) {
-                            SurahFrame(seg.first().surah)
-                            if (Surahs.get(seg.first().surah).hasSeparateBasmala) {
-                                Basmala(
-                                    active = vm.playingSurah == seg.first().surah && vm.playingAyah == 0,
-                                    onClick = { vm.playFrom(seg.first().surah, 1) },
-                                )
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val segments = remember(ayahs) { pageSegments(ayahs) }
+                    // حجم الخط يُحسب ليملأ النص الصفحة على أي شاشة، والتكبير/التصغير نسبة منه
+                    val fit = rememberFittedSize(segments, constraints.maxWidth, constraints.maxHeight)
+                    val styles = pageStyles(fit * vm.fontSize / BASE_FONT_SIZE)
+                    Column(
+                        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        segments.forEach { seg ->
+                            if (seg.first().numberInSurah == 1) {
+                                SurahFrame(seg.first().surah, styles)
+                                if (Surahs.get(seg.first().surah).hasSeparateBasmala) {
+                                    Basmala(
+                                        styles,
+                                        active = vm.playingSurah == seg.first().surah && vm.playingAyah == 0,
+                                        onTap = onTap,
+                                        onPlay = { vm.playFrom(seg.first().surah, 1) },
+                                    )
+                                }
                             }
+                            AyahsText(vm, seg, styles, onTap)
                         }
-                        AyahsText(vm, seg)
                     }
                 }
                 PageFooter(page, ayahs)
@@ -209,6 +274,72 @@ private fun pageSegments(ayahs: List<PageAyah>): List<List<PageAyah>> {
         if (out.isEmpty() || out.last().last().surah != a.surah) out += mutableListOf(a) else out.last() += a
     }
     return out
+}
+
+/** حجم الخط الافتراضي في الإعدادات؛ يقابل حجم الملاءمة دون تكبير */
+private const val BASE_FONT_SIZE = 26f
+private const val LINE_HEIGHT = 1.8f
+private const val MIN_FIT = 16f
+private const val MAX_FIT = 36f
+
+/** أنماط نص الصفحة كلها مشتقة من حجم واحد حتى تتناسب عند تغيّر الشاشة */
+private class PageStyles(base: TextStyle, val size: Float) {
+    val ayahs = base.merge(
+        TextStyle(fontFamily = MushafFont, fontSize = size.sp, lineHeight = (size * LINE_HEIGHT).sp, textAlign = TextAlign.Justify)
+    )
+    val title = base.merge(TextStyle(fontFamily = MushafFont, fontSize = (size * 0.92f).sp))
+    val ornament = base.merge(TextStyle(fontFamily = QuranFont, fontSize = size.sp))
+}
+
+@Composable
+private fun pageStyles(size: Float): PageStyles {
+    val base = LocalTextStyle.current
+    return remember(base, size) { PageStyles(base, size) }
+}
+
+// الهوامش الثابتة حول كل عنصر، مطابقة لما في SurahFrame و Basmala و AyahsText
+private val FRAME_EXTRA = 20.dp
+private val TITLE_EXTRA = 8.dp
+private val TEXT_EXTRA = 4.dp
+
+/** أكبر حجم خط تتسع به الصفحة كاملة (الإطارات والبسملة والآيات) للمساحة المتاحة */
+@Composable
+private fun rememberFittedSize(segments: List<List<PageAyah>>, width: Int, height: Int): Float {
+    val measurer = rememberTextMeasurer(cacheSize = 0)
+    val density = LocalDensity.current
+    val base = LocalTextStyle.current
+    return remember(segments, width, height, density, base) {
+        if (width <= 0 || height <= 0) return@remember BASE_FONT_SIZE
+        val textConstraints = Constraints(maxWidth = width)
+
+        fun heightAt(size: Float): Int {
+            val s = PageStyles(base, size)
+            var total = 0
+            for (seg in segments) {
+                val first = seg.first()
+                if (first.numberInSurah == 1) {
+                    val title = measurer.measure("سُورَةُ ${Surahs.get(first.surah).name}", s.title).size.height
+                    val ornament = measurer.measure("۞", s.ornament).size.height
+                    total += maxOf(title + with(density) { TITLE_EXTRA.roundToPx() }, ornament) + with(density) { FRAME_EXTRA.roundToPx() }
+                    if (Surahs.get(first.surah).hasSeparateBasmala) {
+                        total += measurer.measure(Arabic.BASMALA, s.title).size.height + with(density) { TEXT_EXTRA.roundToPx() }
+                    }
+                }
+                val text = seg.joinToString(" ", postfix = " ") { it.text }
+                total += measurer.measure(text, s.ayahs, constraints = textConstraints).size.height + with(density) { TEXT_EXTRA.roundToPx() }
+            }
+            return total
+        }
+
+        if (heightAt(MAX_FIT) <= height) return@remember MAX_FIT
+        var lo = MIN_FIT
+        var hi = MAX_FIT
+        repeat(8) {
+            val mid = (lo + hi) / 2
+            if (heightAt(mid) <= height) lo = mid else hi = mid
+        }
+        lo
+    }
 }
 
 /** الترويسة: رقم الجزء يميناً واسم السورة يساراً */
@@ -246,7 +377,7 @@ private fun PageFooter(page: Int, ayahs: List<PageAyah>) {
 
 /** إطار اسم السورة المزخرف */
 @Composable
-private fun SurahFrame(surah: Int) {
+private fun SurahFrame(surah: Int, styles: PageStyles) {
     val colors = MaterialTheme.colorScheme
     val line = colors.onSurfaceVariant.copy(alpha = 0.8f)
     Surface(
@@ -262,7 +393,7 @@ private fun SurahFrame(surah: Int) {
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("۞", fontFamily = QuranFont, fontSize = 26.sp, color = line)
+            Text("۞", style = styles.ornament, color = line)
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(
                     "سُورَةُ ${Surahs.get(surah).name}",
@@ -270,68 +401,85 @@ private fun SurahFrame(surah: Int) {
                         .padding(vertical = 4.dp)
                         .border(0.75.dp, line.copy(alpha = 0.6f), RoundedCornerShape(50))
                         .padding(horizontal = 22.dp),
-                    fontFamily = QuranFont,
-                    fontSize = 24.sp,
+                    style = styles.title,
                     color = colors.onBackground,
                 )
             }
-            Text("۞", fontFamily = QuranFont, fontSize = 26.sp, color = line)
+            Text("۞", style = styles.ornament, color = line)
         }
     }
 }
 
 @Composable
-private fun Basmala(active: Boolean, onClick: () -> Unit) {
+private fun Basmala(styles: PageStyles, active: Boolean, onTap: () -> Unit, onPlay: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Text(
             Arabic.BASMALA,
             Modifier
                 .clip(RoundedCornerShape(12.dp))
                 .background(if (active) colors.secondaryContainer else colors.background)
-                .clickable(onClick = onClick)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { onTap() },
+                        onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onPlay() },
+                    )
+                }
                 .padding(horizontal = 16.dp, vertical = 2.dp),
-            fontFamily = QuranFont,
-            fontSize = 24.sp,
+            style = styles.title,
             color = if (active) colors.onSecondaryContainer else colors.onBackground,
         )
     }
 }
 
-/** نص الآيات متصلاً ومضبوطاً على الجانبين، وكل آية قابلة للضغط لبدء التلاوة منها */
+/**
+ * نص الآيات متصلاً ومضبوطاً على الجانبين. الضغط يظهر الأشرطة ويخفيها،
+ * والضغط المطوّل على آية يبدأ التلاوة منها.
+ */
 @Composable
-private fun AyahsText(vm: QuranViewModel, ayahs: List<PageAyah>) {
+private fun AyahsText(vm: QuranViewModel, ayahs: List<PageAyah>, styles: PageStyles, onTap: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    // موضع كل آية في النص لمعرفة الآية تحت إصبع المستخدم
+    val ranges = remember(ayahs) {
+        var start = 0
+        ayahs.map { a -> (start until start + a.text.length).also { start += a.text.length + 1 } }
+    }
     val text = buildAnnotatedString {
         ayahs.forEach { a ->
             val highlighted = vm.playingSurah == a.surah && vm.playingAyah == a.numberInSurah
-            withLink(
-                LinkAnnotation.Clickable(
-                    tag = "${a.surah}:${a.numberInSurah}",
-                    styles = TextLinkStyles(style = SpanStyle()),
-                    linkInteractionListener = { vm.playFrom(a.surah, a.numberInSurah) },
-                )
+            withStyle(
+                if (highlighted) SpanStyle(background = colors.secondaryContainer, color = colors.onSecondaryContainer)
+                else SpanStyle()
             ) {
-                withStyle(
-                    if (highlighted) SpanStyle(background = colors.secondaryContainer, color = colors.onSecondaryContainer)
-                    else SpanStyle()
-                ) {
-                    // U+06DD علامة نهاية الآية؛ خط أميري قرآن يرسم الرقم داخل الزخرفة
-                    append(a.text)
-                    append(" ۝")
-                    append(Arabic.digits(a.numberInSurah))
-                }
+                // نص المجمع ينتهي برقم الآية، وخط المصحف يرسمه داخل علامة نهاية الآية
+                append(a.text)
             }
             append(' ')
         }
     }
     Text(
         text = text,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        fontFamily = QuranFont,
-        fontSize = vm.fontSize.sp,
-        lineHeight = (vm.fontSize * 1.9f).sp,
-        textAlign = TextAlign.Justify,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .pointerInput(ayahs) {
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onLongPress = { pos ->
+                        val offset = layout?.getOffsetForPosition(pos) ?: return@detectTapGestures
+                        val i = ranges.indexOfFirst { offset in it }.takeIf { it >= 0 }
+                            ?: ranges.indexOfFirst { offset < it.first }.takeIf { it >= 0 }
+                            ?: ayahs.lastIndex
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        vm.playFrom(ayahs[i].surah, ayahs[i].numberInSurah)
+                    },
+                )
+            },
+        onTextLayout = { layout = it },
+        style = styles.ayahs,
         color = colors.onBackground,
     )
 }

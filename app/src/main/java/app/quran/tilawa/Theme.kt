@@ -12,6 +12,13 @@ import androidx.compose.ui.text.font.FontFamily
 /** خط "أميري قرآن" المصمم خصيصاً للرسم العثماني وعلامات الوقف وأرقام الآيات */
 val QuranFont = FontFamily(Font(R.font.amiri_quran))
 
+/**
+ * خط مصحف المدينة من مجمع الملك فهد (KFGQPC HAFS Uthmanic Script) لنص المصحف فقط:
+ * يحوّل الأرقام العربية إلى علامة نهاية الآية بالرقم داخلها، لذا لا يُستخدم للعناوين التي فيها أرقام.
+ * يتطلب نص المجمع (text_qpc_hafs) لا نص تنزيل.
+ */
+val MushafFont = FontFamily(Font(R.font.uthmanic_hafs))
+
 private val LightColors = lightColorScheme(
     primary = Color(0xFF0E5A3A),
     onPrimary = Color.White,
