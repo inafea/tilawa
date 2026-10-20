@@ -49,9 +49,14 @@ private val DarkColors = darkColorScheme(
 )
 
 @Composable
-fun TilawaTheme(content: @Composable () -> Unit) {
+fun TilawaTheme(themeMode: Int = 0, content: @Composable () -> Unit) {
+    val dark = when (themeMode) {
+        1 -> false
+        2 -> true
+        else -> isSystemInDarkTheme()
+    }
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        colorScheme = if (dark) DarkColors else LightColors,
         content = content,
     )
 }

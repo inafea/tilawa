@@ -13,7 +13,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -37,10 +36,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            TilawaTheme {
+            val vm: QuranViewModel = viewModel()
+            TilawaTheme(themeMode = vm.themeMode) {
                 // الواجهة بالكامل من اليمين إلى اليسار بغض النظر عن لغة الجهاز
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                    val vm: QuranViewModel = viewModel()
                     val snackbar = remember { SnackbarHostState() }
 
                     LaunchedEffect(vm.message) {
@@ -50,11 +49,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val surah = vm.openSurah
-                    if (surah == null) {
+                    if (!vm.readerOpen) {
                         SurahListScreen(vm, snackbar)
                     } else {
-                        key(surah) { ReaderScreen(vm, surah, snackbar) }
+                        MushafScreen(vm, snackbar)
                     }
                 }
             }

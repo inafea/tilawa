@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -39,16 +40,26 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var autoNext by mutableStateOf(prefs.autoNext)
         private set
+    /** 0 = حسب النظام، 1 = فاتح، 2 = داكن */
+    var themeMode by mutableIntStateOf(prefs.themeMode)
+        private set
 
+    /** شاشة المصحف مفتوحة؟ */
+    var readerOpen by mutableStateOf(false)
+        private set
+    /** السورة المعروضة حالياً في المصحف (سورة أول آية في الصفحة) */
     var openSurah by mutableStateOf<Int?>(null)
         private set
-    var ayahs by mutableStateOf<List<Ayah>>(emptyList())
+    /** الصفحة المعروضة حالياً (١..٦٠٤) */
+    var currentPage by mutableIntStateOf(1)
         private set
-    var loading by mutableStateOf(false)
+    /** طلب انتقال الصفحات؛ كائن جديد في كل مرة حتى يتكرر الطلب لنفس الصفحة */
+    var jump by mutableStateOf<PageJump?>(null)
         private set
-    var loadError by mutableStateOf(false)
-        private set
-    var scrollTarget by mutableIntStateOf(0)
+    val pages = mutableStateMapOf<Int, List<PageAyah>>()
+    val pageErrors = mutableStateMapOf<Int, Boolean>()
+    private val loadingPages = mutableSetOf<Int>()
+    private val surahPages = HashMap<Int, IntArray>()
     var downloading by mutableStateOf(false)
         private set
 
@@ -102,28 +113,49 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- التصفح ----------
     fun openSurah(number: Int, scrollToAyah: Int = 0) {
+        currentPage = Pages.startOf(number)
         openSurah = number
-        scrollTarget = scrollToAyah
-        loadSurah(number)
+        readerOpen = true
+        if (scrollToAyah > 1) {
+            viewModelScope.launch {
+                val p = pageOf(number, scrollToAyah)
+                if (readerOpen && p != currentPage) jump = PageJump(p, animate = false)
+            }
+        }
     }
-
-    fun retry() { openSurah?.let { loadSurah(it) } }
 
     fun closeSurah() {
+        readerOpen = false
         openSurah = null
-        ayahs = emptyList()
     }
 
-    private fun loadSurah(number: Int) {
-        ayahs = emptyList()
-        loadError = false
-        loading = true
+    /** تستدعيها الواجهة عند استقرار الصفحة المعروضة */
+    fun onPageShown(page: Int) {
+        currentPage = page
+        openSurah = pages[page]?.firstOrNull()?.surah ?: Pages.surahAt(page)
+        loadPage(page)
+    }
+
+    fun loadPage(page: Int) {
+        if (page !in 1..Pages.COUNT || pages.containsKey(page) || !loadingPages.add(page)) return
+        pageErrors.remove(page)
         viewModelScope.launch {
-            runCatching { repo.getAyahs(number) }
-                .onSuccess { if (openSurah == number) ayahs = it }
-                .onFailure { if (openSurah == number) loadError = true }
-            if (openSurah == number) loading = false
+            runCatching { repo.getPage(page) }
+                .onSuccess {
+                    pages[page] = it
+                    if (page == currentPage) openSurah = it.firstOrNull()?.surah ?: openSurah
+                }
+                .onFailure { pageErrors[page] = true }
+            loadingPages.remove(page)
         }
+    }
+
+    /** رقم الصفحة التي فيها الآية (البسملة = الآية ١) */
+    private suspend fun pageOf(surah: Int, ayah: Int): Int {
+        val map = surahPages[surah] ?: runCatching {
+            repo.getAyahs(surah).map { it.page }.toIntArray().also { surahPages[surah] = it }
+        }.getOrNull()
+        return map?.getOrNull(ayah.coerceAtLeast(1) - 1)?.takeIf { it > 0 } ?: Pages.startOf(surah)
     }
 
     // ---------- التشغيل ----------
@@ -167,6 +199,13 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
     fun togglePlay() {
         val c = controller ?: return
         val viewing = openSurah
+        // في المصحف: إن لم تكن التلاوة الجارية في الصفحة المعروضة نبدأ من أول آية فيها
+        val onPage = pages[currentPage]
+        if (readerOpen && onPage != null && onPage.none { it.surah == playingSurah && it.numberInSurah == playingAyah.coerceAtLeast(1) }) {
+            val first = onPage.first()
+            playFrom(first.surah, first.numberInSurah)
+            return
+        }
         if (viewing != null && playingSurah != viewing) {
             playFrom(viewing, 1)
             return
@@ -218,6 +257,12 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         prefs.fontSize = fontSize
     }
 
+    /** التبديل الدوري: تلقائي ← فاتح ← داكن ← تلقائي */
+    fun cycleTheme() {
+        themeMode = (themeMode + 1) % 3
+        prefs.themeMode = themeMode
+    }
+
     fun toggleAutoNext() {
         autoNext = !autoNext
         prefs.autoNext = autoNext
@@ -256,6 +301,13 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         val a = parts.getOrNull(1)?.toIntOrNull() ?: return
         playingSurah = s
         playingAyah = a
+        // التزامن: ننتقل إلى صفحة الآية التي يتلوها القارئ
+        if (readerOpen) {
+            viewModelScope.launch {
+                val p = pageOf(s, a)
+                if (readerOpen && p != currentPage && playingSurah == s && playingAyah == a) jump = PageJump(p, animate = true)
+            }
+        }
         if (a > 0) {
             prefs.saveLast(s, a)
             lastSurah = s
@@ -266,9 +318,7 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
     private fun onSurahFinished() {
         val s = playingSurah ?: return
         if (!autoNext || s >= 114) return
-        val next = s + 1
-        if (openSurah == s) openSurah(next)
-        playFrom(next, 1)
+        playFrom(s + 1, 1)
     }
 
     override fun onCleared() {
@@ -277,3 +327,5 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
     }
 }
+
+class PageJump(val page: Int, val animate: Boolean)

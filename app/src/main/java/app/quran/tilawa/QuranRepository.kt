@@ -35,6 +35,26 @@ class QuranRepository(context: Context) {
         }
     }
 
+    /** آيات صفحة من المصحف، مع فصل البسملة عن أول آية في كل سورة */
+    suspend fun getPage(page: Int): List<PageAyah> = withContext(Dispatchers.IO) {
+        val json = cachedOrFetch("page_$page.json", "$base/page/$page/quran-uthmani")
+        val arr = json.getJSONObject("data").getJSONArray("ayahs")
+        List(arr.length()) { i ->
+            val o = arr.getJSONObject(i)
+            val surah = o.getJSONObject("surah").getInt("number")
+            val n = o.getInt("numberInSurah")
+            val raw = o.getString("text")
+            PageAyah(
+                surah = surah,
+                numberInSurah = n,
+                text = if (n == 1 && Surahs.get(surah).hasSeparateBasmala) Arabic.stripBasmala(raw) else raw.replace("﻿", ""),
+                juz = o.optInt("juz"),
+                page = o.optInt("page", page),
+                hizbQuarter = o.optInt("hizbQuarter"),
+            )
+        }
+    }
+
     /** روابط ملفات الصوت مرتبة حسب رقم الآية داخل السورة */
     suspend fun getAudioUrls(surah: Int, reciter: Reciter): List<String> = withContext(Dispatchers.IO) {
         val json = cachedOrFetch("audio_${reciter.edition}_$surah.json", "$base/surah/$surah/${reciter.edition}")
@@ -47,12 +67,24 @@ class QuranRepository(context: Context) {
         val root = JSONObject(httpGet("$base/quran/quran-uthmani"))
         check(root.optInt("code") == 200) { "Unexpected response" }
         val surahs = root.getJSONObject("data").getJSONArray("surahs")
+        val pages = HashMap<Int, JSONArray>()
         for (i in 0 until surahs.length()) {
             val s = surahs.getJSONObject(i)
+            val ayahs = s.getJSONArray("ayahs")
+            for (j in 0 until ayahs.length()) {
+                // نفس شكل استجابة /page: كل آية تحمل رقم سورتها
+                val a = JSONObject(ayahs.getJSONObject(j).toString())
+                    .put("surah", JSONObject().put("number", s.getInt("number")))
+                pages.getOrPut(a.getInt("page")) { JSONArray() }.put(a)
+            }
             val wrapped = JSONObject()
                 .put("code", 200)
                 .put("data", JSONObject().put("ayahs", s.getJSONArray("ayahs")))
             File(dir, "text_${s.getInt("number")}.json").writeText(wrapped.toString())
+        }
+        for ((page, ayahs) in pages) {
+            val wrapped = JSONObject().put("code", 200).put("data", JSONObject().put("ayahs", ayahs))
+            File(dir, "page_$page.json").writeText(wrapped.toString())
         }
     }
 
@@ -97,6 +129,11 @@ class Prefs(context: Context) {
     var fontSize: Float
         get() = sp.getFloat("font_size", 26f)
         set(v) = sp.edit().putFloat("font_size", v).apply()
+
+    /** 0 = حسب النظام، 1 = فاتح، 2 = داكن */
+    var themeMode: Int
+        get() = sp.getInt("theme_mode", 0)
+        set(v) = sp.edit().putInt("theme_mode", v).apply()
 
     var autoNext: Boolean
         get() = sp.getBoolean("auto_next", true)

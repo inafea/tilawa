@@ -27,7 +27,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.GraphicEq
@@ -98,6 +101,13 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
             CenterAlignedTopAppBar(
                 title = { Text("القرآن الكريم", fontFamily = QuranFont, fontSize = 28.sp) },
                 actions = {
+                    IconButton(onClick = { vm.cycleTheme() }) {
+                        when (vm.themeMode) {
+                            1 -> Icon(Icons.Filled.LightMode, "الوضع الفاتح (اضغط للتبديل)")
+                            2 -> Icon(Icons.Filled.DarkMode, "الوضع الداكن (اضغط للتبديل)")
+                            else -> Icon(Icons.Filled.BrightnessAuto, "الوضع حسب النظام (اضغط للتبديل)")
+                        }
+                    }
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "المزيد")
                     }
@@ -260,197 +270,7 @@ private fun ReciterChips(vm: QuranViewModel) {
     }
 }
 
-// =====================================================================
-// شاشة القراءة والاستماع
-// =====================================================================
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ReaderScreen(vm: QuranViewModel, surahNumber: Int, snackbar: SnackbarHostState) {
-    val surah = Surahs.get(surahNumber)
-    val listState = rememberLazyListState()
-    var menuOpen by remember { mutableStateOf(false) }
-    val active = vm.playingSurah == surahNumber
-
-    BackHandler { vm.closeSurah() }
-
-    // التزامن: كلما انتقل القارئ إلى آية جديدة ننزل إليها تلقائياً
-    // (عنصر القائمة 0 هو الترويسة والبسملة، والعنصر n هو الآية n)
-    LaunchedEffect(vm.playingSurah, vm.playingAyah, vm.ayahs.size) {
-        if (active && vm.playingAyah >= 0 && vm.ayahs.isNotEmpty()) {
-            listState.animateScrollToItem(vm.playingAyah.coerceAtMost(vm.ayahs.size))
-        }
-    }
-    // فتح السورة عند آية محددة (متابعة القراءة)
-    LaunchedEffect(vm.ayahs.size) {
-        if (vm.ayahs.isNotEmpty() && vm.scrollTarget > 0 && !active) {
-            listState.scrollToItem(vm.scrollTarget.coerceAtMost(vm.ayahs.size))
-        }
-        if (vm.ayahs.isNotEmpty()) vm.scrollTarget = 0
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { vm.closeSurah() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع إلى الفهرس")
-                    }
-                },
-                title = {
-                    Column {
-                        Text("سورة ${surah.name}", fontFamily = QuranFont, fontSize = 24.sp)
-                        Text(
-                            "${surah.revelation} • ${Arabic.ayahCountLabel(surah.ayahCount)}" +
-                                (vm.ayahs.firstOrNull()?.let { " • الجزء ${Arabic.digits(it.juz)}" } ?: ""),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { vm.changeFontSize(-2f) }) { Icon(Icons.Filled.ZoomOut, "تصغير الخط") }
-                    IconButton(onClick = { vm.changeFontSize(2f) }) { Icon(Icons.Filled.ZoomIn, "تكبير الخط") }
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.RecordVoiceOver, "اختيار القارئ") }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        Text(
-                            "اختر القارئ",
-                            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Reciters.all.forEach { r ->
-                            DropdownMenuItem(
-                                text = { Text(r.name) },
-                                trailingIcon = { if (r.id == vm.reciter.id) Icon(Icons.Filled.Check, null) },
-                                onClick = { menuOpen = false; vm.selectReciter(r) },
-                            )
-                        }
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text("الانتقال تلقائياً للسورة التالية") },
-                            trailingIcon = { Switch(checked = vm.autoNext, onCheckedChange = null) },
-                            onClick = { vm.toggleAutoNext() },
-                        )
-                    }
-                },
-                colors = greenBarColors(),
-            )
-        },
-        bottomBar = { PlayerBar(vm, onTitleClick = null) },
-        snackbarHost = { SnackbarHost(snackbar) },
-        containerColor = MaterialTheme.colorScheme.background,
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when {
-                vm.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-
-                vm.loadError -> Column(
-                    Modifier.align(Alignment.Center).padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        "تعذّر تحميل السورة.\nتحقّق من اتصالك بالإنترنت (يلزم الاتصال أول مرة فقط).",
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    FilledTonalButton(onClick = { vm.retry() }) {
-                        Icon(Icons.Filled.Refresh, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("إعادة المحاولة")
-                    }
-                }
-
-                else -> LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 12.dp),
-                ) {
-                    item(key = "header") {
-                        SurahHeader(
-                            surah = surah,
-                            basmalaActive = active && vm.playingAyah == 0,
-                            onBasmalaClick = { vm.playFrom(surahNumber, 1) },
-                        )
-                    }
-                    items(vm.ayahs, key = { it.numberInSurah }) { ayah ->
-                        AyahItem(
-                            ayah = ayah,
-                            highlighted = active && vm.playingAyah == ayah.numberInSurah,
-                            fontSize = vm.fontSize,
-                            onClick = { vm.playFrom(surahNumber, ayah.numberInSurah) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SurahHeader(surah: Surah, basmalaActive: Boolean, onBasmalaClick: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.primary,
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.secondary),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                "سورة ${surah.name}",
-                Modifier.padding(vertical = 12.dp),
-                fontFamily = QuranFont,
-                fontSize = 30.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onPrimary,
-            )
-        }
-        if (surah.hasSeparateBasmala) {
-            val bg by animateColorAsState(
-                if (basmalaActive) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.background,
-                label = "basmala",
-            )
-            Text(
-                Arabic.BASMALA,
-                Modifier
-                    .padding(top = 10.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(bg)
-                    .clickable(onClick = onBasmalaClick)
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                fontFamily = QuranFont,
-                fontSize = 26.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
-    }
-}
-
-@Composable
-private fun AyahItem(ayah: Ayah, highlighted: Boolean, fontSize: Float, onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val bg by animateColorAsState(if (highlighted) colors.secondaryContainer else colors.surface, label = "ayah")
-    Surface(
-        onClick = onClick,
-        color = bg,
-        shape = RoundedCornerShape(16.dp),
-        border = if (highlighted) BorderStroke(1.5.dp, colors.secondary) else BorderStroke(0.5.dp, colors.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
-    ) {
-        // U+06DD علامة نهاية الآية؛ خط أميري قرآن يرسم الرقم داخل الزخرفة
-        Text(
-            text = ayah.text + " ۝" + Arabic.digits(ayah.numberInSurah),
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            fontFamily = QuranFont,
-            fontSize = fontSize.sp,
-            lineHeight = (fontSize * 2f).sp,
-            textAlign = TextAlign.Justify,
-            color = if (highlighted) colors.onSecondaryContainer else colors.onSurface,
-        )
-    }
-}
+// شاشة المصحف (صفحات) في MushafScreen.kt
 
 // =====================================================================
 // شريط التحكم بالتلاوة
@@ -512,7 +332,7 @@ fun PlayerBar(vm: QuranViewModel, onTitleClick: (() -> Unit)?) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun greenBarColors() = TopAppBarDefaults.topAppBarColors(
+internal fun greenBarColors() = TopAppBarDefaults.topAppBarColors(
     containerColor = MaterialTheme.colorScheme.primary,
     titleContentColor = MaterialTheme.colorScheme.onPrimary,
     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
