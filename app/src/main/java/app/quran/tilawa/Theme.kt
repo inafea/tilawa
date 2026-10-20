@@ -13,17 +13,28 @@ import androidx.compose.ui.text.font.FontFamily
 val QuranFont = FontFamily(Font(R.font.amiri_quran))
 
 /**
- * خط مصحف المدينة من مجمع الملك فهد (KFGQPC HAFS Uthmanic Script) لنص المصحف فقط:
- * يحوّل الأرقام العربية إلى علامة نهاية الآية بالرقم داخلها، لذا لا يُستخدم للعناوين التي فيها أرقام.
- * يتطلب نص المجمع (text_qpc_hafs) لا نص تنزيل.
+ * خطوط نص المصحف من مجمع الملك فهد، وتتطلب نص المجمع (text_qpc_hafs) لا نص تنزيل.
+ * خط المجمع يحوّل الأرقام العربية إلى علامة نهاية آية، لذا لا تُستخدم هذه الخطوط للعناوين التي فيها أرقام
+ * (علامات الآيات في الصفحة ترسمها شاشة المصحف بنفسها).
+ * (خط Hafs Smart غير مدرج: حروفه في المنطقة الخاصة من يونيكود ويتطلب نصاً بترميزه الخاص.
+ * وأميري قرآن غير مدرج لنص المصحف: لا يضع حركات نص المجمع في مواضعها، ويبقى للعناوين)
  */
-val MushafFont = FontFamily(Font(R.font.uthmanic_hafs))
+class MushafFontOption(val id: String, val name: String, val family: FontFamily)
+
+object MushafFonts {
+    val all = listOf(
+        MushafFontOption("uthmanic_hafs", "KFGQPC Uthmanic Hafs", FontFamily(Font(R.font.uthmanic_hafs))),
+        MushafFontOption("scheherazade", "Scheherazade New", FontFamily(Font(R.font.scheherazade_new))),
+    )
+    val default get() = all.first()
+    fun get(id: String?) = all.firstOrNull { it.id == id } ?: default
+}
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF0E5A3A),
+    primary = Color(0xFF1D3557),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD6EADF),
-    onPrimaryContainer = Color(0xFF06301F),
+    primaryContainer = Color(0xFFDCE3F0),
+    onPrimaryContainer = Color(0xFF0B1B33),
     secondary = Color(0xFFA67C1E),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFF6E7BF),
@@ -38,10 +49,10 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF0E5A3A),
-    onPrimary = Color(0xFFEFF7F2),
-    primaryContainer = Color(0xFF1E4B37),
-    onPrimaryContainer = Color(0xFFD6EADF),
+    primary = Color(0xFF1D3557),
+    onPrimary = Color(0xFFF3EEDF),
+    primaryContainer = Color(0xFF2A4470),
+    onPrimaryContainer = Color(0xFFDCE3F0),
     secondary = Color(0xFFE2C26E),
     onSecondary = Color(0xFF3D2E05),
     secondaryContainer = Color(0xFF4E3C12),

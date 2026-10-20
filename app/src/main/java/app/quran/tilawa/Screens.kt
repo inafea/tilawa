@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -79,6 +80,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,6 +97,14 @@ import androidx.compose.ui.unit.sp
 fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
     val surahs = remember(vm.query) { Surahs.search(vm.query) }
     var menuOpen by remember { mutableStateOf(false) }
+    var reviewPicker by remember { mutableStateOf(false) }
+
+    if (reviewPicker) {
+        SurahPickerDialog(
+            onPick = { reviewPicker = false; vm.requestReview(it) },
+            onDismiss = { reviewPicker = false },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -113,6 +123,11 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
+                            text = { Text("مراجعة") },
+                            leadingIcon = { Icon(Icons.Filled.Mic, null) },
+                            onClick = { menuOpen = false; reviewPicker = true },
+                        )
+                        DropdownMenuItem(
                             text = { Text("حفظ نص المصحف للقراءة دون إنترنت") },
                             leadingIcon = { Icon(Icons.Filled.CloudDownload, null) },
                             onClick = { menuOpen = false; vm.downloadAllText() },
@@ -124,7 +139,8 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                         )
                     }
                 },
-                colors = greenBarColors(),
+                colors = patternBarColors(),
+                modifier = Modifier.islamicPattern(),
             )
         },
         bottomBar = {
@@ -333,8 +349,10 @@ fun PlayerBar(vm: QuranViewModel, onTitleClick: (() -> Unit)?) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun greenBarColors() = TopAppBarDefaults.topAppBarColors(
-    containerColor = MaterialTheme.colorScheme.primary,
+/** الشريط شفاف لتظهر تحته الزخرفة (Modifier.islamicPattern) */
+internal fun patternBarColors() = TopAppBarDefaults.topAppBarColors(
+    containerColor = Color.Transparent,
+    scrolledContainerColor = Color.Transparent,
     titleContentColor = MaterialTheme.colorScheme.onPrimary,
     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
     actionIconContentColor = MaterialTheme.colorScheme.onPrimary,

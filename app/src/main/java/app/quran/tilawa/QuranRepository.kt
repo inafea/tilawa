@@ -165,6 +165,10 @@ class Prefs(context: Context) {
         get() = sp.getFloat("font_size", 26f)
         set(v) = sp.edit().putFloat("font_size", v).apply()
 
+    var mushafFont: String?
+        get() = sp.getString("mushaf_font", null)
+        set(v) = sp.edit().putString("mushaf_font", v).apply()
+
     /** 0 = حسب النظام، 1 = فاتح، 2 = داكن */
     var themeMode: Int
         get() = sp.getInt("theme_mode", 0)

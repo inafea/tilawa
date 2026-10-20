@@ -40,6 +40,8 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var autoNext by mutableStateOf(prefs.autoNext)
         private set
+    var mushafFont by mutableStateOf(MushafFonts.get(prefs.mushafFont))
+        private set
     /** 0 = حسب النظام، 1 = فاتح، 2 = داكن */
     var themeMode by mutableIntStateOf(prefs.themeMode)
         private set
@@ -122,6 +124,20 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
                 if (readerOpen && p != currentPage) jump = PageJump(p, animate = false)
             }
         }
+    }
+
+    /** سورة طُلبت مراجعتها من القائمة؛ تبدأها شاشة المصحف ثم تمسحها */
+    var reviewRequest by mutableStateOf<Int?>(null)
+        private set
+
+    fun requestReview(surah: Int) {
+        if (isPlaying) togglePlay()
+        openSurah(surah)
+        reviewRequest = surah
+    }
+
+    fun reviewRequestHandled() {
+        reviewRequest = null
     }
 
     fun closeSurah() {
@@ -255,6 +271,11 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
     fun changeFontSize(delta: Float) {
         fontSize = (fontSize + delta).coerceIn(18f, 46f)
         prefs.fontSize = fontSize
+    }
+
+    fun selectMushafFont(f: MushafFontOption) {
+        mushafFont = f
+        prefs.mushafFont = f.id
     }
 
     /** التبديل الدوري: تلقائي ← فاتح ← داكن ← تلقائي */
