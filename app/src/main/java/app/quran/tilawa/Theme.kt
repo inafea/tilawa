@@ -12,23 +12,23 @@ import androidx.compose.ui.text.font.FontFamily
 /** خط "أميري قرآن" المصمم خصيصاً للرسم العثماني وعلامات الوقف وأرقام الآيات */
 val QuranFont = FontFamily(Font(R.font.amiri_quran))
 
-/**
- * خطوط نص المصحف من مجمع الملك فهد، وتتطلب نص المجمع (text_qpc_hafs) لا نص تنزيل.
- * خط المجمع يحوّل الأرقام العربية إلى علامة نهاية آية، لذا لا تُستخدم هذه الخطوط للعناوين التي فيها أرقام
- * (علامات الآيات في الصفحة ترسمها شاشة المصحف بنفسها).
- * (خط Hafs Smart غير مدرج: حروفه في المنطقة الخاصة من يونيكود ويتطلب نصاً بترميزه الخاص.
- * وأميري قرآن غير مدرج لنص المصحف: لا يضع حركات نص المجمع في مواضعها، ويبقى للعناوين)
- */
-class MushafFontOption(val id: String, val name: String, val family: FontFamily)
+/** خط الثلث (Layla Thuluth) لعنوان التطبيق */
+val ThuluthFont = FontFamily(Font(R.font.layla_thuluth))
 
-object MushafFonts {
-    val all = listOf(
-        MushafFontOption("uthmanic_hafs", "KFGQPC Uthmanic Hafs", FontFamily(Font(R.font.uthmanic_hafs))),
-        MushafFontOption("scheherazade", "Scheherazade New", FontFamily(Font(R.font.scheherazade_new))),
-    )
-    val default get() = all.first()
-    fun get(id: String?) = all.firstOrNull { it.id == id } ?: default
-}
+/**
+ * أسماء السور بخط الثلث كما في ترويسات مصحف المدينة (خط أسماء السور v4 من QUL).
+ * الخط يرسم اسم السورة كاملاً من رمز مركّب: surah001 … surah114.
+ */
+val SurahNameFont = FontFamily(Font(R.font.surah_names))
+
+fun surahNameCode(number: Int) = "surah%03d".format(java.util.Locale.ROOT, number)
+
+/**
+ * خط نص المصحف (KFGQPC Uthmanic Hafs من مجمع الملك فهد)، ويتطلب نص المجمع (text_qpc_hafs) لا نص تنزيل.
+ * خط المجمع يحوّل الأرقام العربية إلى علامة نهاية آية، لذا لا يُستخدم للعناوين التي فيها أرقام
+ * (علامات الآيات في الصفحة ترسمها شاشة المصحف بنفسها).
+ */
+val MushafFont = FontFamily(Font(R.font.uthmanic_hafs))
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF1D3557),

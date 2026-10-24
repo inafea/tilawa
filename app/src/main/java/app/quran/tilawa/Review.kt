@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
 // =====================================================================
@@ -385,7 +386,7 @@ fun SurahPickerDialog(onPick: (Int) -> Unit, onDismiss: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(Arabic.digits(s.number), color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(36.dp))
-                            Text("سورة ${s.name}", fontFamily = QuranFont, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            SurahName(s.number, fontSize = 26.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                             Text(Arabic.ayahCountLabel(s.ayahCount), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         HorizontalDivider()

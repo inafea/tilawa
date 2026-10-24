@@ -9,6 +9,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -40,8 +42,6 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var autoNext by mutableStateOf(prefs.autoNext)
         private set
-    var mushafFont by mutableStateOf(MushafFonts.get(prefs.mushafFont))
-        private set
     /** 0 = حسب النظام، 1 = فاتح، 2 = داكن */
     var themeMode by mutableIntStateOf(prefs.themeMode)
         private set
@@ -59,6 +59,8 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
     var jump by mutableStateOf<PageJump?>(null)
         private set
     val pages = mutableStateMapOf<Int, List<PageAyah>>()
+    /** خط كل صفحة محمّلة (لكل صفحة من المصحف المطبوع خط خاص بها) */
+    val pageFonts = mutableStateMapOf<Int, FontFamily>()
     val pageErrors = mutableStateMapOf<Int, Boolean>()
     private val loadingPages = mutableSetOf<Int>()
     private val surahPages = HashMap<Int, IntArray>()
@@ -156,8 +158,9 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         if (page !in 1..Pages.COUNT || pages.containsKey(page) || !loadingPages.add(page)) return
         pageErrors.remove(page)
         viewModelScope.launch {
-            runCatching { repo.getPage(page) }
-                .onSuccess {
+            runCatching { repo.getPage(page) to repo.getPageFont(page) }
+                .onSuccess { (it, font) ->
+                    pageFonts[page] = FontFamily(Font(font))
                     pages[page] = it
                     if (page == currentPage) openSurah = it.firstOrNull()?.surah ?: openSurah
                 }
@@ -273,11 +276,6 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         prefs.fontSize = fontSize
     }
 
-    fun selectMushafFont(f: MushafFontOption) {
-        mushafFont = f
-        prefs.mushafFont = f.id
-    }
-
     /** التبديل الدوري: تلقائي ← فاتح ← داكن ← تلقائي */
     fun cycleTheme() {
         themeMode = (themeMode + 1) % 3
@@ -320,13 +318,17 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         val parts = item?.mediaId?.split(":") ?: return
         val s = parts.getOrNull(0)?.toIntOrNull() ?: return
         val a = parts.getOrNull(1)?.toIntOrNull() ?: return
+        val prevSurah = playingSurah
+        val prevAyah = playingAyah
         playingSurah = s
         playingAyah = a
-        // التزامن: ننتقل إلى صفحة الآية التي يتلوها القارئ
+        // التزامن: ننتقل إلى صفحة الآية التي يتلوها القارئ، فقط إن كان المستخدم يتابع صفحة الآية السابقة؛
+        // فإن تصفّح صفحة أخرى أثناء الاستماع لا نعيده إليها
         if (readerOpen) {
             viewModelScope.launch {
                 val p = pageOf(s, a)
-                if (readerOpen && p != currentPage && playingSurah == s && playingAyah == a) jump = PageJump(p, animate = true)
+                val following = prevSurah == null || prevAyah < 0 || pageOf(prevSurah, prevAyah) == currentPage
+                if (readerOpen && following && p != currentPage && playingSurah == s && playingAyah == a) jump = PageJump(p, animate = true)
             }
         }
         if (a > 0) {

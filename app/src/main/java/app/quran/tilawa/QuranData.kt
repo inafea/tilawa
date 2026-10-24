@@ -27,6 +27,10 @@ data class PageAyah(
     val juz: Int,
     val page: Int,
     val hizbQuarter: Int,
+    /** رموز كلمات الآية بترتيبها ثم علامة نهايتها، في خط صفحتها من خطوط المصحف المطبوع (QPC V2) */
+    val words: List<String> = emptyList(),
+    /** رقم سطر كل عنصر في words داخل صفحة المصحف المطبوع (١-١٥) */
+    val lines: List<Int> = emptyList(),
 )
 
 /** ترقيم صفحات مصحف المدينة (٦٠٤ صفحات) */
@@ -74,6 +78,7 @@ object Reciters {
     val all = listOf(
         Reciter("minshawi", "محمد صديق المنشاوي", "ar.minshawi"),
         Reciter("abdulbasit", "عبد الباسط عبد الصمد", "ar.abdulbasitmurattal"),
+        Reciter("husary", "محمود خليل الحصري", "ar.husary"),
     )
 
     fun byId(id: String?): Reciter = all.firstOrNull { it.id == id } ?: all.first()
@@ -159,4 +164,24 @@ object Arabic {
 
     /** بترميز مجمع الملك فهد (السكون U+06E1) ليتطابق مع خط المصحف */
     const val BASMALA = "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ"
+}
+
+/** أجزاء المصحف الثلاثون وبدايتها (السورة والآية) */
+object Juzs {
+    const val COUNT = 30
+    private val starts = listOf(
+        1 to 1, 2 to 142, 2 to 253, 3 to 93, 4 to 24, 4 to 148, 5 to 82, 6 to 111, 7 to 88, 8 to 41,
+        9 to 93, 11 to 6, 12 to 53, 15 to 1, 17 to 1, 18 to 75, 21 to 1, 23 to 1, 25 to 21, 27 to 56,
+        29 to 46, 33 to 31, 36 to 28, 39 to 32, 41 to 47, 46 to 1, 51 to 31, 58 to 1, 67 to 1, 78 to 1,
+    )
+
+    /** بداية الجزء: (السورة، الآية) */
+    fun start(juz: Int): Pair<Int, Int> = starts[juz - 1]
+
+    /** السور التي فيها شيء من الجزء، بترتيبها (السورة المقسومة بين جزأين تظهر في الاثنين) */
+    fun surahsOf(juz: Int): List<Surah> {
+        val first = starts[juz - 1].first
+        val last = starts.getOrNull(juz)?.let { (s, a) -> if (a == 1) s - 1 else s } ?: 114
+        return (first..last).map { Surahs.get(it) }
+    }
 }
