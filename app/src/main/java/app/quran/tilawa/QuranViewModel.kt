@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -186,20 +187,16 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             isBuffering = true
-            val urls = runCatching { repo.getAudioUrls(surah, reciter) }.getOrElse {
+            val audio = runCatching { repo.getAudio(surah, reciter) }.getOrElse {
                 isBuffering = false
                 message = "تعذّر جلب التلاوة، تحقّق من الاتصال بالإنترنت"
                 return@launch
             }
             val info = Surahs.get(surah)
             val items = mutableListOf<MediaItem>()
-            if (info.hasSeparateBasmala) {
-                // البسملة = الآية الأولى من الفاتحة (الرقم العام 1) بصوت نفس القارئ
-                val basmalaUrl = urls.first().replace(Regex("/\\d+\\.mp3$"), "/1.mp3")
-                items += mediaItem(surah, 0, basmalaUrl, "سورة ${info.name} • البسملة")
-            }
-            urls.forEachIndexed { i, url ->
-                items += mediaItem(surah, i + 1, url, "سورة ${info.name} • الآية ${Arabic.digits(i + 1)}")
+            audio.basmala?.let { items += mediaItem(surah, 0, it, "سورة ${info.name} • البسملة") }
+            audio.ayahs.forEachIndexed { i, a ->
+                items += mediaItem(surah, i + 1, a, "سورة ${info.name} • الآية ${Arabic.digits(i + 1)}")
             }
             val start = when {
                 info.hasSeparateBasmala && ayah <= 1 -> 0
@@ -217,15 +214,21 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
 
     fun togglePlay() {
         val c = controller ?: return
+        // الإيقاف المؤقت فوري دائماً، ولا يُعيد الآية ولا يبدأ سورة أخرى
+        if (c.isPlaying) {
+            c.pause()
+            return
+        }
         val viewing = openSurah
-        // في المصحف: إن لم تكن التلاوة الجارية في الصفحة المعروضة نبدأ من أول آية فيها
+        // في المصحف: إن لم تكن التلاوة الجارية في الصفحة المعروضة (تصفّح المستخدم غيرها) نبدأ من أول آية فيها
         val onPage = pages[currentPage]
         if (readerOpen && onPage != null && onPage.none { it.surah == playingSurah && it.numberInSurah == playingAyah.coerceAtLeast(1) }) {
             val first = onPage.first()
             playFrom(first.surah, first.numberInSurah)
             return
         }
-        if (viewing != null && playingSurah != viewing) {
+        // خارج المصحف: السورة المفتوحة غير الجارية تبدأ من أولها (في المصحف تكفي الصفحة)
+        if (!readerOpen && viewing != null && playingSurah != viewing) {
             playFrom(viewing, 1)
             return
         }
@@ -234,13 +237,9 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
             playFrom(s, if (s == lastSurah) lastAyah.coerceAtLeast(1) else 1)
             return
         }
-        if (c.isPlaying) {
-            c.pause()
-        } else {
-            if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0L)
-            if (c.playbackState == Player.STATE_IDLE) c.prepare()
-            c.play()
-        }
+        if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0L)
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        c.play()
     }
 
     fun next() {
@@ -300,11 +299,18 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- داخلي ----------
-    private fun mediaItem(surah: Int, ayah: Int, url: String, title: String): MediaItem =
+    private fun mediaItem(surah: Int, ayah: Int, audio: AyahAudio, title: String): MediaItem =
         MediaItem.Builder()
             .setMediaId("$surah:$ayah")
-            .setUri(url)
-            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(url)).build())
+            .setUri(audio.url)
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(audio.url)).build())
+            // الآية مقطع من ملف السورة عند القرّاء الذين لا تتوفر تلاواتهم آية بآية
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(audio.startMs)
+                    .setEndPositionMs(audio.endMs ?: C.TIME_END_OF_SOURCE)
+                    .build()
+            )
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(title)

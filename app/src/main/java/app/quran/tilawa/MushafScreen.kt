@@ -491,12 +491,12 @@ private fun SurahFrame(surah: Int, styles: PageStyles, modifier: Modifier) {
                         .padding(horizontal = 22.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    SurahName(surah, fontSize = styles.size.sp, color = colors.onBackground, lineHeight = (styles.size * 1.05f).sp)
+                    SurahName(surah, fontSize = (styles.size * 0.9f).sp, color = colors.onBackground, lineHeight = (styles.size * 0.9f).sp)
                     Text(
                         "${info.revelation} • ${Arabic.ayahCountLabel(info.ayahCount)}",
                         color = colors.onSurfaceVariant,
-                        fontSize = (styles.size * 0.3f).sp,
-                        lineHeight = (styles.size * 0.36f).sp,
+                        fontSize = (styles.size * 0.28f).sp,
+                        lineHeight = (styles.size * 0.3f).sp,
                         maxLines = 1,
                     )
                 }

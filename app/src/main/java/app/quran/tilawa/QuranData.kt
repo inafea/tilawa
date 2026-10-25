@@ -70,7 +70,19 @@ data class Reciter(
     val name: String,
     /** معرّف الإصدار الصوتي (آية بآية) في api.alquran.cloud */
     val edition: String,
+    /**
+     * للقرّاء غير المتوفرين آية بآية: رقم القارئ في mp3quran.net ومجلد ملفات السور فيه.
+     * تُشغَّل كل آية مقطعاً من ملف السورة بحسب توقيتات الآيات من الموقع نفسه.
+     */
+    val mp3quranRead: Int? = null,
+    val mp3quranFolder: String? = null,
 )
+
+/** صوت آية: ملفها، أو مقطع من ملف السورة (بالملّي ثانية؛ النهاية null = حتى آخر الملف) */
+class AyahAudio(val url: String, val startMs: Long = 0, val endMs: Long? = null)
+
+/** صوت سورة: البسملة (إن كانت لها بسملة منفصلة) ثم الآيات بالترتيب */
+class SurahAudio(val basmala: AyahAudio?, val ayahs: List<AyahAudio>)
 
 object Reciters {
     // لإضافة قارئ جديد: أضف سطراً بمعرّف إصدار صوتي من نوع "آية بآية"
@@ -79,6 +91,10 @@ object Reciters {
         Reciter("minshawi", "محمد صديق المنشاوي", "ar.minshawi"),
         Reciter("abdulbasit", "عبد الباسط عبد الصمد", "ar.abdulbasitmurattal"),
         Reciter("husary", "محمود خليل الحصري", "ar.husary"),
+        Reciter(
+            "raad_kurdi", "رعد محمد الكردي", "mp3quran.raad-kurdi",
+            mp3quranRead = 221, mp3quranFolder = "https://cdn.mp3quran.net/audio/raad-kurdi/r1/",
+        ),
     )
 
     fun byId(id: String?): Reciter = all.firstOrNull { it.id == id } ?: all.first()
