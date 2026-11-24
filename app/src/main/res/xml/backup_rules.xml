@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- النسخ الاحتياطي (Android 11 وما قبله): الإعدادات فقط، دون ذاكرة الصوت والنصوص المؤقتة -->
+<full-backup-content>
+    <include domain="sharedpref" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+</full-backup-content>

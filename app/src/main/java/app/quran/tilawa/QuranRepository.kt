@@ -17,7 +17,9 @@ import java.net.URL
 class QuranRepository(context: Context) {
     private val base = "https://api.alquran.cloud/v1"
     private val qpcBase = "https://api.quran.com/api/v4"
+    private val fontBase = "https://verses.quran.foundation/fonts/quran/hafs/v2/ttf"
     private val dir = File(context.filesDir, "quran").apply { mkdirs() }
+    private val fontsDir = File(dir, "fonts").apply { mkdirs() }
 
     suspend fun getAyahs(surah: Int): List<Ayah> = withContext(Dispatchers.IO) {
         val json = cachedOrFetch("text_$surah.json", "$base/surah/$surah/quran-uthmani")
@@ -40,9 +42,10 @@ class QuranRepository(context: Context) {
     /**
      * آيات صفحة من المصحف بنص مجمع الملك فهد (من api.quran.com) ليُعرض بخط المصحف.
      * نص المجمع لا يتضمن البسملة، وينتهي كل آية برقمها فيرسمه الخط داخل علامة نهاية الآية.
+     * ومع كل آية رموز كلماتها في خط الصفحة وأرقام أسطرها، حتى تُعرض الصفحة سطراً بسطر بخط المصحف المطبوع.
      */
     suspend fun getPage(page: Int): List<PageAyah> = withContext(Dispatchers.IO) {
-        val json = cachedOrFetch("qpc_page_$page.json") { fetchQpcPage(page) }
+        val json = cachedOrFetch(pageFile(page)) { fetchQpcPage(page) }
         val arr = json.getJSONObject("data").getJSONArray("ayahs")
         List(arr.length()) { i ->
             val o = arr.getJSONObject(i)
@@ -53,23 +56,38 @@ class QuranRepository(context: Context) {
                 juz = o.optInt("juz"),
                 page = o.optInt("page", page),
                 hizbQuarter = o.optInt("hizbQuarter"),
+                words = o.optJSONArray("words")?.let { w -> List(w.length()) { w.getString(it) } }.orEmpty(),
+                lines = o.optJSONArray("lines")?.let { l -> List(l.length()) { l.getInt(it) } }.orEmpty(),
             )
         }
     }
 
     /** يجلب الصفحة من api.quran.com ويحوّلها لنفس شكل استجابة alquran.cloud ليُحفظ ويُقرأ بطريقة واحدة */
+    /**
+     * صفحة المصحف بتقسيم خطوط V2. تقسيم الصفحات في الواجهة (by_page) قديم ويخالف V2 في بعض الآيات
+     * (٥٦ آية في ٣٥ صفحة، أكثرها في جزء عمّ)، فرموزها من خط صفحة مجاورة وتُرسم بخط هذه الصفحة كلمات أخرى.
+     * لذلك نجمع آيات الصفحة والصفحتين المجاورتين ونأخذ منها ما صفحته في V2 هي هذه الصفحة.
+     */
     private fun fetchQpcPage(page: Int): String {
         val ayahs = JSONArray()
-        var p = 1
-        while (true) {
-            val root = JSONObject(httpGet("$qpcBase/verses/by_page/$page?fields=text_qpc_hafs&per_page=50&page=$p"))
-            val verses = root.getJSONArray("verses")
-            for (i in 0 until verses.length()) {
-                val v = verses.getJSONObject(i)
-                val (surah, n) = v.getString("verse_key").split(':').map { it.toInt() }
-                ayahs.put(qpcAyah(surah, n, v.getString("text_qpc_hafs"), v.optInt("juz_number"), v.optInt("page_number", page), v.optInt("rub_el_hizb_number")))
+        for (source in maxOf(1, page - 1)..minOf(Pages.COUNT, page + 1)) {
+            var p = 1
+            while (true) {
+                val root = JSONObject(httpGet("$qpcBase/verses/by_page/$source?fields=text_qpc_hafs&words=true&word_fields=code_v2,line_v2,v2_page&per_page=50&page=$p"))
+                val verses = root.getJSONArray("verses")
+                for (i in 0 until verses.length()) {
+                    val v = verses.getJSONObject(i)
+                    val words = v.getJSONArray("words")
+                    if (words.getJSONObject(0).getInt("v2_page") != page) continue
+                    val (surah, n) = v.getString("verse_key").split(':').map { it.toInt() }
+                    ayahs.put(
+                        qpcAyah(surah, n, v.getString("text_qpc_hafs"), v.optInt("juz_number"), page, v.optInt("rub_el_hizb_number"))
+                            .put("words", JSONArray(List(words.length()) { words.getJSONObject(it).getString("code_v2") }))
+                            .put("lines", JSONArray(List(words.length()) { words.getJSONObject(it).getInt("line_v2") })),
+                    )
+                }
+                p = root.getJSONObject("pagination").optInt("next_page", 0).takeIf { it > 0 } ?: break
             }
-            p = root.getJSONObject("pagination").optInt("next_page", 0).takeIf { it > 0 } ?: break
         }
         return wrap(ayahs).toString()
     }
@@ -82,43 +100,89 @@ class QuranRepository(context: Context) {
         .put("page", page)
         .put("hizbQuarter", hizbQuarter)
 
+    /** ملف الصفحة مع رموز الكلمات وأرقام الأسطر (اسم جديد حتى لا تُقرأ ملفات النسخ السابقة، وفيها آيات في غير صفحتها) */
+    private fun pageFile(page: Int) = "mushaf_v2p_page_$page.json"
+
+    /** خط الصفحة من خطوط المصحف المطبوع (QPC V2 من مجمع الملك فهد)؛ لكل صفحة خط خاص بها */
+    suspend fun getPageFont(page: Int): File = withContext(Dispatchers.IO) {
+        val file = File(fontsDir, "p$page.ttf")
+        if (!file.exists() || file.length() == 0L) {
+            val tmp = File(fontsDir, "p$page.ttf.tmp")
+            val conn = URL("$fontBase/p$page.ttf").openConnection() as HttpURLConnection
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 30_000
+            try {
+                check(conn.responseCode == 200) { "HTTP ${conn.responseCode}" }
+                conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            } finally {
+                conn.disconnect()
+            }
+            check(tmp.renameTo(file)) { "Cannot save font" }
+        }
+        file
+    }
+
     private fun wrap(ayahs: JSONArray) = JSONObject().put("code", 200).put("data", JSONObject().put("ayahs", ayahs))
 
-    /** روابط ملفات الصوت مرتبة حسب رقم الآية داخل السورة */
-    suspend fun getAudioUrls(surah: Int, reciter: Reciter): List<String> = withContext(Dispatchers.IO) {
+    /** صوت السورة بصوت القارئ: البسملة ثم الآيات مرتبة حسب رقمها في السورة */
+    suspend fun getAudio(surah: Int, reciter: Reciter): SurahAudio = withContext(Dispatchers.IO) {
+        val hasBasmala = Surahs.get(surah).hasSeparateBasmala
+        val read = reciter.mp3quranRead
+        val folder = reciter.mp3quranFolder
+        if (read != null && folder != null) {
+            // ملف واحد للسورة، وكل آية مقطع منه؛ ما قبل الآية الأولى هو البسملة
+            val json = cachedOrFetch("audio_${reciter.edition}_$surah.json") { fetchTimings(surah, read) }
+            val arr = json.getJSONObject("data").getJSONArray("ayahs")
+            val url = folder + "%03d.mp3".format(java.util.Locale.ROOT, surah)
+            val ayahs = List(arr.length()) { i ->
+                val o = arr.getJSONObject(i)
+                AyahAudio(url, o.getLong("start"), o.getLong("end").takeIf { i < arr.length() - 1 })
+            }
+            return@withContext SurahAudio(
+                basmala = if (hasBasmala) AyahAudio(url, 0, ayahs.first().startMs) else null,
+                ayahs = ayahs,
+            )
+        }
         val json = cachedOrFetch("audio_${reciter.edition}_$surah.json", "$base/surah/$surah/${reciter.edition}")
         val arr = json.getJSONObject("data").getJSONArray("ayahs")
-        List(arr.length()) { i -> arr.getJSONObject(i).getString("audio") }
+        val urls = List(arr.length()) { i -> arr.getJSONObject(i).getString("audio") }
+        // البسملة = الآية الأولى من الفاتحة (الرقم العام 1) بصوت نفس القارئ
+        SurahAudio(
+            basmala = if (hasBasmala) AyahAudio(urls.first().replace(Regex("/\\d+\\.mp3$"), "/1.mp3")) else null,
+            ayahs = urls.map { AyahAudio(it) },
+        )
+    }
+
+    /** توقيتات آيات السورة من mp3quran.net بنفس شكل الملفات المحفوظة الأخرى */
+    private fun fetchTimings(surah: Int, read: Int): String {
+        val arr = JSONArray(httpGet("https://mp3quran.net/api/v3/ayat_timing?surah=$surah&read=$read"))
+        val ayahs = JSONArray()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            if (o.getInt("ayah") < 1) continue
+            ayahs.put(JSONObject().put("ayah", o.getInt("ayah")).put("start", o.getLong("start_time")).put("end", o.getLong("end_time")))
+        }
+        check(ayahs.length() == Surahs.get(surah).ayahCount) { "Incomplete timings" }
+        return wrap(ayahs).toString()
     }
 
     /**
-     * تحميل نص المصحف كاملاً وتقسيمه إلى ملفات السور (للفهرسة) وملفات الصفحات (للعرض).
-     * بيانات الصفحة والجزء والحزب من alquran.cloud، ونص الآيات من نص مجمع الملك فهد.
+     * تحميل نص المصحف كاملاً: ملفات السور (للفهرسة) من alquran.cloud،
+     * وملفات الصفحات وخطوطها (للعرض) من api.quran.com.
      */
     suspend fun downloadAllText() = withContext(Dispatchers.IO) {
         val root = JSONObject(httpGet("$base/quran/quran-uthmani"))
         check(root.optInt("code") == 200) { "Unexpected response" }
-        val qpc = JSONObject(httpGet("$qpcBase/quran/verses/qpc_hafs")).getJSONArray("verses")
-        val qpcText = HashMap<String, String>(qpc.length())
-        for (i in 0 until qpc.length()) qpc.getJSONObject(i).let { qpcText[it.getString("verse_key")] = it.getString("text_qpc_hafs") }
-        check(qpcText.size == 6236) { "Incomplete text" }
-
         val surahs = root.getJSONObject("data").getJSONArray("surahs")
-        val pages = HashMap<Int, JSONArray>()
         for (i in 0 until surahs.length()) {
             val s = surahs.getJSONObject(i)
-            val number = s.getInt("number")
-            val ayahs = s.getJSONArray("ayahs")
-            for (j in 0 until ayahs.length()) {
-                val a = ayahs.getJSONObject(j)
-                val n = a.getInt("numberInSurah")
-                val page = a.getInt("page")
-                pages.getOrPut(page) { JSONArray() }
-                    .put(qpcAyah(number, n, qpcText.getValue("$number:$n"), a.optInt("juz"), page, a.optInt("hizbQuarter")))
-            }
-            File(dir, "text_$number.json").writeText(wrap(ayahs).toString())
+            File(dir, "text_${s.getInt("number")}.json").writeText(wrap(s.getJSONArray("ayahs")).toString())
         }
-        for ((page, ayahs) in pages) File(dir, "qpc_page_$page.json").writeText(wrap(ayahs).toString())
+        // أرقام الأسطر لا تأتي إلا مع الصفحة، فتُحمّل كل صفحة لم تُحفظ بعد
+        for (page in 1..Pages.COUNT) {
+            cachedOrFetch(pageFile(page)) { fetchQpcPage(page) }
+            getPageFont(page)
+        }
     }
 
     fun isTextCached(surah: Int) = File(dir, "text_$surah.json").let { it.exists() && it.length() > 0 }

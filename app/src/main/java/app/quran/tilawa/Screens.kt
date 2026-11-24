@@ -29,11 +29,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -53,6 +56,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -64,6 +69,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -76,13 +84,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -95,11 +111,24 @@ import androidx.compose.ui.unit.sp
 fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
     val surahs = remember(vm.query) { Surahs.search(vm.query) }
     var menuOpen by remember { mutableStateOf(false) }
+    var donateOpen by remember { mutableStateOf(false) }
+    if (donateOpen) DonateDialog(onDismiss = { donateOpen = false })
+    var aboutOpen by remember { mutableStateOf(false) }
+    if (aboutOpen) AboutDialog(onDismiss = { aboutOpen = false })
+    var reviewPicker by remember { mutableStateOf(false) }
+    var byJuz by rememberSaveable { mutableStateOf(false) }
+
+    if (reviewPicker) {
+        SurahPickerDialog(
+            onPick = { reviewPicker = false; vm.requestReview(it) },
+            onDismiss = { reviewPicker = false },
+        )
+    }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("القرآن الكريم", fontFamily = QuranFont, fontSize = 28.sp) },
+                title = { Text("القرآن الكريم", fontFamily = ThuluthFont, fontSize = 30.sp) },
                 actions = {
                     IconButton(onClick = { vm.cycleTheme() }) {
                         when (vm.themeMode) {
@@ -122,9 +151,20 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                             trailingIcon = { Switch(checked = vm.autoNext, onCheckedChange = null) },
                             onClick = { vm.toggleAutoNext() },
                         )
+                        if (Donation.isEnabled()) DropdownMenuItem(
+                            text = { Text("دعم التطبيق بالتبرع") },
+                            leadingIcon = { Icon(Icons.Filled.Favorite, null) },
+                            onClick = { menuOpen = false; donateOpen = true },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("حول التطبيق والخصوصية") },
+                            leadingIcon = { Icon(Icons.Filled.Info, null) },
+                            onClick = { menuOpen = false; aboutOpen = true },
+                        )
                     }
                 },
-                colors = greenBarColors(),
+                colors = patternBarColors(),
+                modifier = Modifier.islamicPattern(),
             )
         },
         bottomBar = {
@@ -132,6 +172,11 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                 PlayerBar(vm, onTitleClick = { vm.playingSurah?.let { vm.openSurah(it, vm.playingAyah) } })
             }
         },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { reviewPicker = true }) { Icon(Icons.Filled.Mic, "تسميع") }
+        },
+        // الواجهة من اليمين لليسار، فالبداية هي الجهة اليمنى
+        floatingActionButtonPosition = FabPosition.Start,
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
@@ -171,12 +216,30 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                 item { ContinueCard(vm) }
             }
 
-            items(surahs, key = { it.number }) { s ->
+            if (vm.query.isBlank()) {
+                item { IndexTabs(byJuz, onChange = { byJuz = it }) }
+            }
+
+            if (byJuz && vm.query.isBlank()) {
+                for (juz in 1..Juzs.COUNT) {
+                    item(key = "juz_$juz") { JuzHeader(juz) }
+                    val (startSurah, startAyah) = Juzs.start(juz)
+                    items(Juzs.surahsOf(juz), key = { "juz_${juz}_${it.number}" }) { s ->
+                        // السورة التي يبدأ الجزء من وسطها تُفتح عند أول آية في الجزء (دون تشغيل التلاوة)
+                        val ayah = if (s.number == startSurah) startAyah else 1
+                        SurahRow(
+                            surah = s,
+                            playing = vm.playingSurah == s.number,
+                            onClick = { vm.openSurah(s.number, ayah) },
+                        )
+                    }
+                }
+            } else items(surahs, key = { it.number }) { s ->
                 SurahRow(
                     surah = s,
                     playing = vm.playingSurah == s.number,
-                    // فتح السورة يبدأ تلاوتها من أولها حتى لو كانت سورة أخرى قيد التشغيل
-                    onClick = { vm.openSurah(s.number); vm.playFrom(s.number, 1) },
+                    // فتح السورة لا يبدأ التلاوة؛ يبدؤها المستخدم بزر التشغيل في المصحف
+                    onClick = { vm.openSurah(s.number) },
                 )
             }
         }
@@ -224,7 +287,7 @@ private fun SurahRow(surah: Surah, playing: Boolean, onClick: () -> Unit) {
             NumberBadge(surah.number)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("سورة ${surah.name}", fontFamily = QuranFont, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface)
+                SurahName(surah.number, fontSize = 30.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     "${surah.revelation} • ${Arabic.ayahCountLabel(surah.ayahCount)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -234,6 +297,61 @@ private fun SurahRow(surah: Surah, playing: Boolean, onClick: () -> Unit) {
             if (playing) Icon(Icons.Filled.GraphicEq, "قيد التشغيل", tint = MaterialTheme.colorScheme.secondary)
         }
     }
+}
+
+/** الفهرس: بالسور أو بالأجزاء */
+@Composable
+private fun IndexTabs(byJuz: Boolean, onChange: (Boolean) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        listOf(false to "السور", true to "الأجزاء").forEachIndexed { i, (value, label) ->
+            SegmentedButton(
+                selected = byJuz == value,
+                onClick = { onChange(value) },
+                shape = SegmentedButtonDefaults.itemShape(i, 2),
+                // نفس لون بطاقة "متابعة من حيث توقفت" للخيار المحدد
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    activeContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            ) { Text(label) }
+        }
+    }
+}
+
+@Composable
+private fun JuzHeader(juz: Int) {
+    // الرقم بخط أميري: خط الثلث يرسم الأرقام العربية بأشكال الأرقام اللاتينية
+    Text(
+        buildAnnotatedString {
+            append("الجزء ")
+            withStyle(SpanStyle(fontFamily = QuranFont, fontSize = 22.sp)) { append(Arabic.digits(juz)) }
+        },
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp),
+        fontFamily = ThuluthFont,
+        fontSize = 26.sp,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+/** اسم السورة بخط الثلث من خط أسماء السور (يُقرأ لقارئ الشاشة نصاً عادياً) */
+@Composable
+fun SurahName(
+    number: Int,
+    fontSize: TextUnit,
+    color: Color,
+    modifier: Modifier = Modifier,
+    lineHeight: TextUnit = fontSize * 1.3f,
+) {
+    val name = "سورة ${Surahs.get(number).name}"
+    Text(
+        surahNameCode(number),
+        modifier.semantics { contentDescription = name },
+        fontFamily = SurahNameFont,
+        fontSize = fontSize,
+        lineHeight = lineHeight,
+        color = color,
+        maxLines = 1,
+    )
 }
 
 @Composable
@@ -333,8 +451,10 @@ fun PlayerBar(vm: QuranViewModel, onTitleClick: (() -> Unit)?) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun greenBarColors() = TopAppBarDefaults.topAppBarColors(
-    containerColor = MaterialTheme.colorScheme.primary,
+/** الشريط شفاف لتظهر تحته الزخرفة (Modifier.islamicPattern) */
+internal fun patternBarColors() = TopAppBarDefaults.topAppBarColors(
+    containerColor = Color.Transparent,
+    scrolledContainerColor = Color.Transparent,
     titleContentColor = MaterialTheme.colorScheme.onPrimary,
     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
     actionIconContentColor = MaterialTheme.colorScheme.onPrimary,

@@ -12,18 +12,29 @@ import androidx.compose.ui.text.font.FontFamily
 /** خط "أميري قرآن" المصمم خصيصاً للرسم العثماني وعلامات الوقف وأرقام الآيات */
 val QuranFont = FontFamily(Font(R.font.amiri_quran))
 
+/** خط الثلث (Layla Thuluth) لعنوان التطبيق */
+val ThuluthFont = FontFamily(Font(R.font.layla_thuluth))
+
 /**
- * خط مصحف المدينة من مجمع الملك فهد (KFGQPC HAFS Uthmanic Script) لنص المصحف فقط:
- * يحوّل الأرقام العربية إلى علامة نهاية الآية بالرقم داخلها، لذا لا يُستخدم للعناوين التي فيها أرقام.
- * يتطلب نص المجمع (text_qpc_hafs) لا نص تنزيل.
+ * أسماء السور بخط الثلث كما في ترويسات مصحف المدينة (خط أسماء السور v4 من QUL).
+ * الخط يرسم اسم السورة كاملاً من رمز مركّب: surah001 … surah114.
+ */
+val SurahNameFont = FontFamily(Font(R.font.surah_names))
+
+fun surahNameCode(number: Int) = "surah%03d".format(java.util.Locale.ROOT, number)
+
+/**
+ * خط نص المصحف (KFGQPC Uthmanic Hafs من مجمع الملك فهد)، ويتطلب نص المجمع (text_qpc_hafs) لا نص تنزيل.
+ * خط المجمع يحوّل الأرقام العربية إلى علامة نهاية آية، لذا لا يُستخدم للعناوين التي فيها أرقام
+ * (علامات الآيات في الصفحة ترسمها شاشة المصحف بنفسها).
  */
 val MushafFont = FontFamily(Font(R.font.uthmanic_hafs))
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF0E5A3A),
+    primary = Color(0xFF1D3557),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD6EADF),
-    onPrimaryContainer = Color(0xFF06301F),
+    primaryContainer = Color(0xFFDCE3F0),
+    onPrimaryContainer = Color(0xFF0B1B33),
     secondary = Color(0xFFA67C1E),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFF6E7BF),
@@ -38,10 +49,10 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF0E5A3A),
-    onPrimary = Color(0xFFEFF7F2),
-    primaryContainer = Color(0xFF1E4B37),
-    onPrimaryContainer = Color(0xFFD6EADF),
+    primary = Color(0xFF1D3557),
+    onPrimary = Color(0xFFF3EEDF),
+    primaryContainer = Color(0xFF2A4470),
+    onPrimaryContainer = Color(0xFFDCE3F0),
     secondary = Color(0xFFE2C26E),
     onSecondary = Color(0xFF3D2E05),
     secondaryContainer = Color(0xFF4E3C12),

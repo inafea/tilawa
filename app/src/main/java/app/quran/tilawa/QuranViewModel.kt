@@ -9,9 +9,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -57,6 +60,8 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
     var jump by mutableStateOf<PageJump?>(null)
         private set
     val pages = mutableStateMapOf<Int, List<PageAyah>>()
+    /** خط كل صفحة محمّلة (لكل صفحة من المصحف المطبوع خط خاص بها) */
+    val pageFonts = mutableStateMapOf<Int, FontFamily>()
     val pageErrors = mutableStateMapOf<Int, Boolean>()
     private val loadingPages = mutableSetOf<Int>()
     private val surahPages = HashMap<Int, IntArray>()
@@ -113,6 +118,8 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- التصفح ----------
     fun openSurah(number: Int, scrollToAyah: Int = 0) {
+        // طلب انتقال قديم (من صفحة التلاوة السابقة) لا يجب أن يعيد المستخدم إلى صفحة السورة الجارية
+        jump = null
         currentPage = Pages.startOf(number)
         openSurah = number
         readerOpen = true
@@ -124,9 +131,28 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** سورة طُلبت مراجعتها من القائمة؛ تبدأها شاشة المصحف ثم تمسحها */
+    var reviewRequest by mutableStateOf<Int?>(null)
+        private set
+
+    fun requestReview(surah: Int) {
+        if (isPlaying) togglePlay()
+        openSurah(surah)
+        reviewRequest = surah
+    }
+
+    fun reviewRequestHandled() {
+        reviewRequest = null
+    }
+
     fun closeSurah() {
         readerOpen = false
         openSurah = null
+    }
+
+    /** تستدعيها الواجهة بعد استهلاك طلب الانتقال حتى لا يتكرر عند إعادة فتح المصحف */
+    fun jumpHandled() {
+        jump = null
     }
 
     /** تستدعيها الواجهة عند استقرار الصفحة المعروضة */
@@ -140,8 +166,9 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         if (page !in 1..Pages.COUNT || pages.containsKey(page) || !loadingPages.add(page)) return
         pageErrors.remove(page)
         viewModelScope.launch {
-            runCatching { repo.getPage(page) }
-                .onSuccess {
+            runCatching { repo.getPage(page) to repo.getPageFont(page) }
+                .onSuccess { (it, font) ->
+                    pageFonts[page] = FontFamily(Font(font))
                     pages[page] = it
                     if (page == currentPage) openSurah = it.firstOrNull()?.surah ?: openSurah
                 }
@@ -167,20 +194,16 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             isBuffering = true
-            val urls = runCatching { repo.getAudioUrls(surah, reciter) }.getOrElse {
+            val audio = runCatching { repo.getAudio(surah, reciter) }.getOrElse {
                 isBuffering = false
                 message = "تعذّر جلب التلاوة، تحقّق من الاتصال بالإنترنت"
                 return@launch
             }
             val info = Surahs.get(surah)
             val items = mutableListOf<MediaItem>()
-            if (info.hasSeparateBasmala) {
-                // البسملة = الآية الأولى من الفاتحة (الرقم العام 1) بصوت نفس القارئ
-                val basmalaUrl = urls.first().replace(Regex("/\\d+\\.mp3$"), "/1.mp3")
-                items += mediaItem(surah, 0, basmalaUrl, "سورة ${info.name} • البسملة")
-            }
-            urls.forEachIndexed { i, url ->
-                items += mediaItem(surah, i + 1, url, "سورة ${info.name} • الآية ${Arabic.digits(i + 1)}")
+            audio.basmala?.let { items += mediaItem(surah, 0, it, "سورة ${info.name} • البسملة") }
+            audio.ayahs.forEachIndexed { i, a ->
+                items += mediaItem(surah, i + 1, a, "سورة ${info.name} • الآية ${Arabic.digits(i + 1)}")
             }
             val start = when {
                 info.hasSeparateBasmala && ayah <= 1 -> 0
@@ -198,15 +221,21 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
 
     fun togglePlay() {
         val c = controller ?: return
+        // الإيقاف المؤقت فوري دائماً، ولا يُعيد الآية ولا يبدأ سورة أخرى
+        if (c.isPlaying) {
+            c.pause()
+            return
+        }
         val viewing = openSurah
-        // في المصحف: إن لم تكن التلاوة الجارية في الصفحة المعروضة نبدأ من أول آية فيها
+        // في المصحف: إن لم تكن التلاوة الجارية في الصفحة المعروضة (تصفّح المستخدم غيرها) نبدأ من أول آية فيها
         val onPage = pages[currentPage]
         if (readerOpen && onPage != null && onPage.none { it.surah == playingSurah && it.numberInSurah == playingAyah.coerceAtLeast(1) }) {
             val first = onPage.first()
             playFrom(first.surah, first.numberInSurah)
             return
         }
-        if (viewing != null && playingSurah != viewing) {
+        // خارج المصحف: السورة المفتوحة غير الجارية تبدأ من أولها (في المصحف تكفي الصفحة)
+        if (!readerOpen && viewing != null && playingSurah != viewing) {
             playFrom(viewing, 1)
             return
         }
@@ -215,13 +244,9 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
             playFrom(s, if (s == lastSurah) lastAyah.coerceAtLeast(1) else 1)
             return
         }
-        if (c.isPlaying) {
-            c.pause()
-        } else {
-            if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0L)
-            if (c.playbackState == Player.STATE_IDLE) c.prepare()
-            c.play()
-        }
+        if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0L)
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        c.play()
     }
 
     fun next() {
@@ -281,11 +306,18 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- داخلي ----------
-    private fun mediaItem(surah: Int, ayah: Int, url: String, title: String): MediaItem =
+    private fun mediaItem(surah: Int, ayah: Int, audio: AyahAudio, title: String): MediaItem =
         MediaItem.Builder()
             .setMediaId("$surah:$ayah")
-            .setUri(url)
-            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(url)).build())
+            .setUri(audio.url)
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(audio.url)).build())
+            // الآية مقطع من ملف السورة عند القرّاء الذين لا تتوفر تلاواتهم آية بآية
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(audio.startMs)
+                    .setEndPositionMs(audio.endMs ?: C.TIME_END_OF_SOURCE)
+                    .build()
+            )
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(title)
@@ -299,13 +331,17 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
         val parts = item?.mediaId?.split(":") ?: return
         val s = parts.getOrNull(0)?.toIntOrNull() ?: return
         val a = parts.getOrNull(1)?.toIntOrNull() ?: return
+        val prevSurah = playingSurah
+        val prevAyah = playingAyah
         playingSurah = s
         playingAyah = a
-        // التزامن: ننتقل إلى صفحة الآية التي يتلوها القارئ
+        // التزامن: ننتقل إلى صفحة الآية التي يتلوها القارئ، فقط إن كان المستخدم يتابع صفحة الآية السابقة؛
+        // فإن تصفّح صفحة أخرى أثناء الاستماع لا نعيده إليها
         if (readerOpen) {
             viewModelScope.launch {
                 val p = pageOf(s, a)
-                if (readerOpen && p != currentPage && playingSurah == s && playingAyah == a) jump = PageJump(p, animate = true)
+                val following = prevSurah == null || prevAyah < 0 || pageOf(prevSurah, prevAyah) == currentPage
+                if (readerOpen && following && p != currentPage && playingSurah == s && playingAyah == a) jump = PageJump(p, animate = true)
             }
         }
         if (a > 0) {
