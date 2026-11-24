@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Close
@@ -109,6 +110,8 @@ import androidx.compose.ui.unit.sp
 fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
     val surahs = remember(vm.query) { Surahs.search(vm.query) }
     var menuOpen by remember { mutableStateOf(false) }
+    var donateOpen by remember { mutableStateOf(false) }
+    if (donateOpen) DonateDialog(onDismiss = { donateOpen = false })
     var reviewPicker by remember { mutableStateOf(false) }
     var byJuz by rememberSaveable { mutableStateOf(false) }
 
@@ -144,6 +147,11 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                             text = { Text("الانتقال تلقائياً للسورة التالية") },
                             trailingIcon = { Switch(checked = vm.autoNext, onCheckedChange = null) },
                             onClick = { vm.toggleAutoNext() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("دعم التطبيق بالتبرع") },
+                            leadingIcon = { Icon(Icons.Filled.Favorite, null) },
+                            onClick = { menuOpen = false; donateOpen = true },
                         )
                     }
                 },
@@ -209,12 +217,12 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                     item(key = "juz_$juz") { JuzHeader(juz) }
                     val (startSurah, startAyah) = Juzs.start(juz)
                     items(Juzs.surahsOf(juz), key = { "juz_${juz}_${it.number}" }) { s ->
-                        // السورة التي يبدأ الجزء من وسطها تُفتح وتُتلى من أول آية في الجزء
+                        // السورة التي يبدأ الجزء من وسطها تُفتح عند أول آية في الجزء (دون تشغيل التلاوة)
                         val ayah = if (s.number == startSurah) startAyah else 1
                         SurahRow(
                             surah = s,
                             playing = vm.playingSurah == s.number,
-                            onClick = { vm.openSurah(s.number, ayah); vm.playFrom(s.number, ayah) },
+                            onClick = { vm.openSurah(s.number, ayah) },
                         )
                     }
                 }
@@ -222,8 +230,8 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                 SurahRow(
                     surah = s,
                     playing = vm.playingSurah == s.number,
-                    // فتح السورة يبدأ تلاوتها من أولها حتى لو كانت سورة أخرى قيد التشغيل
-                    onClick = { vm.openSurah(s.number); vm.playFrom(s.number, 1) },
+                    // فتح السورة لا يبدأ التلاوة؛ يبدؤها المستخدم بزر التشغيل في المصحف
+                    onClick = { vm.openSurah(s.number) },
                 )
             }
         }
@@ -292,6 +300,11 @@ private fun IndexTabs(byJuz: Boolean, onChange: (Boolean) -> Unit) {
                 selected = byJuz == value,
                 onClick = { onChange(value) },
                 shape = SegmentedButtonDefaults.itemShape(i, 2),
+                // نفس لون بطاقة "متابعة من حيث توقفت" للخيار المحدد
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    activeContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
             ) { Text(label) }
         }
     }

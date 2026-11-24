@@ -118,6 +118,8 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- التصفح ----------
     fun openSurah(number: Int, scrollToAyah: Int = 0) {
+        // طلب انتقال قديم (من صفحة التلاوة السابقة) لا يجب أن يعيد المستخدم إلى صفحة السورة الجارية
+        jump = null
         currentPage = Pages.startOf(number)
         openSurah = number
         readerOpen = true
@@ -146,6 +148,11 @@ class QuranViewModel(app: Application) : AndroidViewModel(app) {
     fun closeSurah() {
         readerOpen = false
         openSurah = null
+    }
+
+    /** تستدعيها الواجهة بعد استهلاك طلب الانتقال حتى لا يتكرر عند إعادة فتح المصحف */
+    fun jumpHandled() {
+        jump = null
     }
 
     /** تستدعيها الواجهة عند استقرار الصفحة المعروضة */

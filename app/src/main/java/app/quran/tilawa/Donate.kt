@@ -1,0 +1,43 @@
+package app.quran.tilawa
+
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalUriHandler
+
+object Donation {
+    // TODO: ضع رابط صفحة التبرع الحقيقي قبل النشر (يجب أن يبدأ بـ https://)
+    const val URL = "https://example.com/donate"
+
+    /** لا يُعرض زر الفتح إلا لرابط https صالح، حتى لا يُفتح رابط ناقص أو غير آمن */
+    fun isValidUrl(url: String): Boolean =
+        url.startsWith("https://") && url.length > "https://".length && url.none { it.isWhitespace() }
+}
+
+/** نافذة التبرع: تشرح الغرض وتفتح صفحة التبرع في المتصفح */
+@Composable
+fun DonateDialog(onDismiss: () -> Unit) {
+    val uriHandler = LocalUriHandler.current
+    val valid = Donation.isValidUrl(Donation.URL)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("دعم التطبيق") },
+        text = {
+            Text(
+                "التطبيق مجاني وبلا إعلانات. تبرّعك يساعد على استمراره وتطويره، " +
+                    "وستُفتح صفحة التبرع في المتصفح. جزاك الله خيراً."
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    onDismiss()
+                    runCatching { uriHandler.openUri(Donation.URL) }
+                },
+            ) { Text("تبرّع الآن") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("لاحقاً") } },
+    )
+}

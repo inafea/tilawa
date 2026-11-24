@@ -89,6 +89,7 @@ object Reciters {
     // مثل ar.husary أو ar.alafasy أو ar.minshawimujawwad
     val all = listOf(
         Reciter("minshawi", "محمد صديق المنشاوي", "ar.minshawi"),
+        Reciter("Abdurrahmaan As-Sudais","عبدالرحمن السديس","ar.abdurrahmaansudais"),
         Reciter("abdulbasit", "عبد الباسط عبد الصمد", "ar.abdulbasitmurattal"),
         Reciter("husary", "محمود خليل الحصري", "ar.husary"),
         Reciter(

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -27,6 +28,9 @@ class MainActivity : ComponentActivity() {
         // أشرطة النظام فوق الترويسة الخضراء: أيقونات فاتحة دائماً
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
+
+        // إبقاء الشاشة مضاءة أثناء فتح التطبيق؛ تنطفئ فقط عند إغلاقها من المستخدم أو خروج التطبيق من الواجهة
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // إذن الإشعارات لعرض أزرار التحكم أثناء التشغيل في الخلفية (أندرويد 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
