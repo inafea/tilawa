@@ -148,7 +148,7 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                             trailingIcon = { Switch(checked = vm.autoNext, onCheckedChange = null) },
                             onClick = { vm.toggleAutoNext() },
                         )
-                        DropdownMenuItem(
+                        if (Donation.isEnabled()) DropdownMenuItem(
                             text = { Text("دعم التطبيق بالتبرع") },
                             leadingIcon = { Icon(Icons.Filled.Favorite, null) },
                             onClick = { menuOpen = false; donateOpen = true },

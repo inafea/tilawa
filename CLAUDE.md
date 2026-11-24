@@ -10,6 +10,7 @@ Tilawa (تلاوة): a single-module Android app (Kotlin + Jetpack Compose, Mate
 
 ```bash
 ./gradlew assembleDebug        # → app/build/outputs/apk/debug/app-debug.apk
+./gradlew bundleRelease        # → app/build/outputs/bundle/release/app-release.aab (for Google Play)
 ./gradlew assembleRelease      # signed only if TILAWA_KEYSTORE_PATH / _PASSWORD, TILAWA_KEY_ALIAS, TILAWA_KEY_PASSWORD are set
 ./gradlew testDebugUnitTest    # JVM unit tests (JUnit 4)
 ./gradlew testDebugUnitTest --tests "app.quran.tilawa.RecitationTest"   # single class (append .methodName for one test)

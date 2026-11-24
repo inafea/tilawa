@@ -24,4 +24,24 @@ class DonationTest {
         assertFalse(Donation.isValidUrl("ko-fi.com/tilawa"))
         assertFalse(Donation.isValidUrl("https://example.com/my donate"))
     }
+
+    @Test
+    fun placeholderUrlDisablesDonation() {
+        assertTrue(Donation.isPlaceholder("https://example.com/donate"))
+        assertTrue(Donation.isPlaceholder("https://www.example.com/x"))
+        assertFalse(Donation.isEnabled("https://example.com/donate"))
+        assertFalse(Donation.isEnabled(""))
+    }
+
+    @Test
+    fun realUrlEnablesDonation() {
+        assertFalse(Donation.isPlaceholder("https://ko-fi.com/tilawa"))
+        assertTrue(Donation.isEnabled("https://ko-fi.com/tilawa"))
+    }
+
+    @Test
+    fun currentPlaceholderKeepsMenuHidden() {
+        // حتى يُستبدل الرابط المؤقت يبقى خيار التبرع مخفياً
+        if (Donation.isPlaceholder(Donation.URL)) assertFalse(Donation.isEnabled())
+    }
 }
