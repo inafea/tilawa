@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Close
@@ -112,6 +113,8 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
     var menuOpen by remember { mutableStateOf(false) }
     var donateOpen by remember { mutableStateOf(false) }
     if (donateOpen) DonateDialog(onDismiss = { donateOpen = false })
+    var aboutOpen by remember { mutableStateOf(false) }
+    if (aboutOpen) AboutDialog(onDismiss = { aboutOpen = false })
     var reviewPicker by remember { mutableStateOf(false) }
     var byJuz by rememberSaveable { mutableStateOf(false) }
 
@@ -152,6 +155,11 @@ fun SurahListScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                             text = { Text("دعم التطبيق بالتبرع") },
                             leadingIcon = { Icon(Icons.Filled.Favorite, null) },
                             onClick = { menuOpen = false; donateOpen = true },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("حول التطبيق والخصوصية") },
+                            leadingIcon = { Icon(Icons.Filled.Info, null) },
+                            onClick = { menuOpen = false; aboutOpen = true },
                         )
                     }
                 },

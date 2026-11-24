@@ -58,6 +58,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -118,6 +119,8 @@ fun MushafScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
     var menuOpen by remember { mutableStateOf(false) }
     var donateOpen by remember { mutableStateOf(false) }
     if (donateOpen) DonateDialog(onDismiss = { donateOpen = false })
+    var aboutOpen by remember { mutableStateOf(false) }
+    if (aboutOpen) AboutDialog(onDismiss = { aboutOpen = false })
 
     BackHandler { vm.closeSurah() }
 
@@ -252,6 +255,11 @@ fun MushafScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                             text = { Text("دعم التطبيق بالتبرع") },
                             leadingIcon = { Icon(Icons.Filled.Favorite, null) },
                             onClick = { menuOpen = false; donateOpen = true },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("حول التطبيق والخصوصية") },
+                            leadingIcon = { Icon(Icons.Filled.Info, null) },
+                            onClick = { menuOpen = false; aboutOpen = true },
                         )
                     }
                 },
