@@ -20,6 +20,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
@@ -29,6 +31,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -54,6 +57,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -112,6 +116,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 fun MushafScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
     val pager = rememberPagerState(initialPage = vm.currentPage - 1) { Pages.COUNT }
     var menuOpen by remember { mutableStateOf(false) }
+    var donateOpen by remember { mutableStateOf(false) }
+    if (donateOpen) DonateDialog(onDismiss = { donateOpen = false })
 
     BackHandler { vm.closeSurah() }
 
@@ -176,6 +182,7 @@ fun MushafScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
     // الانتقال إلى صفحة الآية الجاري تلاوتها أو المطلوب فتحها
     LaunchedEffect(vm.jump) {
         val j = vm.jump ?: return@LaunchedEffect
+        vm.jumpHandled()
         if (j.animate) pager.animateScrollToPage(j.page - 1) else pager.scrollToPage(j.page - 1)
     }
 
@@ -240,6 +247,11 @@ fun MushafScreen(vm: QuranViewModel, snackbar: SnackbarHostState) {
                             text = { Text("الانتقال تلقائياً للسورة التالية") },
                             trailingIcon = { Switch(checked = vm.autoNext, onCheckedChange = null) },
                             onClick = { vm.toggleAutoNext() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("دعم التطبيق بالتبرع") },
+                            leadingIcon = { Icon(Icons.Filled.Favorite, null) },
+                            onClick = { menuOpen = false; donateOpen = true },
                         )
                     }
                 },
@@ -310,7 +322,7 @@ private fun MushafPage(vm: QuranViewModel, page: Int, review: ReviewSession?, on
                         lines.forEach { line ->
                             val m = Modifier.fillMaxWidth().height(rowHeight)
                             when (line) {
-                                is PageLine.Frame -> SurahFrame(line.surah, styles, m)
+                                is PageLine.Frame -> SurahFrame(line.surah, rowHeight, m)
                                 is PageLine.Basmala -> Basmala(
                                     styles, m,
                                     active = vm.playingSurah == line.surah && vm.playingAyah == 0,
@@ -352,9 +364,9 @@ private fun MushafPage(vm: QuranViewModel, page: Int, review: ReviewSession?, on
 private const val MUSHAF_LINES = 15
 
 /** كلمة من آية، أو علامة نهايتها (index = -1)، برمزها في خط الصفحة */
-private class LineItem(val ayah: PageAyah, val index: Int, val text: String)
+internal class LineItem(val ayah: PageAyah, val index: Int, val text: String)
 
-private sealed interface PageLine {
+internal sealed interface PageLine {
     class Words(val items: List<LineItem>) : PageLine
     class Frame(val surah: Int) : PageLine
     class Basmala(val surah: Int) : PageLine
@@ -365,7 +377,7 @@ private sealed interface PageLine {
  * أسطر الصفحة كما في المصحف المطبوع. الأسطر التي لا كلمات فيها قبل أول سورة تبدأ في الصفحة
  * هي إطار اسم السورة ثم البسملة.
  */
-private fun pageLines(page: Int, ayahs: List<PageAyah>): List<PageLine> {
+internal fun pageLines(page: Int, ayahs: List<PageAyah>): List<PageLine> {
     val byLine = sortedMapOf<Int, MutableList<LineItem>>()
     for (a in ayahs) a.words.forEachIndexed { i, w ->
         byLine.getOrPut(a.lines[i]) { mutableListOf() } += LineItem(a, if (i == a.words.lastIndex) -1 else i, w)
@@ -374,10 +386,13 @@ private fun pageLines(page: Int, ayahs: List<PageAyah>): List<PageLine> {
     return (1..count).map { r ->
         byLine[r]?.let { PageLine.Words(it) } ?: run {
             val next = ayahs.firstOrNull { it.lines.isNotEmpty() && it.lines.first() > r }
+            // أول سطر فارغ بعد محتوى سابق: هنا يُرسم إطار السورة دائماً
+            val firstEmptyRow = r == 1 || byLine[r - 1] != null
             when {
                 next == null || next.numberInSurah != 1 -> PageLine.Empty
+                firstEmptyRow -> PageLine.Frame(next.surah)
                 r == next.lines.first() - 1 && Surahs.get(next.surah).hasSeparateBasmala -> PageLine.Basmala(next.surah)
-                else -> PageLine.Frame(next.surah)
+                else -> PageLine.Empty
             }
         }
     }
@@ -460,49 +475,19 @@ private fun PageFooter(page: Int, ayahs: List<PageAyah>) {
     }
 }
 
-/** إطار اسم السورة المزخرف، بارتفاع سطر واحد من الصفحة */
+/** عنوان السورة: صورة الإطار بالأبيض والأسود، واسم السورة في وسطها الأسود */
 @Composable
-private fun SurahFrame(surah: Int, styles: PageStyles, modifier: Modifier) {
-    val colors = MaterialTheme.colorScheme
-    val line = colors.onSurfaceVariant.copy(alpha = 0.8f)
-    Surface(
-        color = colors.surfaceVariant,
-        shape = RoundedCornerShape(6.dp),
-        border = BorderStroke(1.dp, line),
-        modifier = modifier.padding(vertical = 2.dp),
-    ) {
-        Row(
-            Modifier
-                .padding(3.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .islamicPattern(base = colors.surfaceVariant, ink = colors.secondary, strength = 0.7f, cellSize = 26.dp)
-                .border(0.75.dp, line.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("۞", style = styles.ornament, color = line)
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                // اسم السورة، وتحته بخط صغير نوعها وعدد آياتها
-                val info = Surahs.get(surah)
-                Column(
-                    Modifier
-                        .background(colors.surfaceVariant, RoundedCornerShape(50))
-                        .border(0.75.dp, line.copy(alpha = 0.6f), RoundedCornerShape(50))
-                        .padding(horizontal = 22.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    SurahName(surah, fontSize = (styles.size * 0.9f).sp, color = colors.onBackground, lineHeight = (styles.size * 0.9f).sp)
-                    Text(
-                        "${info.revelation} • ${Arabic.ayahCountLabel(info.ayahCount)}",
-                        color = colors.onSurfaceVariant,
-                        fontSize = (styles.size * 0.28f).sp,
-                        lineHeight = (styles.size * 0.3f).sp,
-                        maxLines = 1,
-                    )
-                }
-            }
-            Text("۞", style = styles.ornament, color = line)
-        }
+private fun SurahFrame(surah: Int, rowHeight: Dp, modifier: Modifier) {
+    Box(modifier.padding(vertical = 2.dp), contentAlignment = Alignment.Center) {
+        Image(
+            painter = painterResource(R.drawable.surah_frame),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds,
+        )
+        // اسم السورة يملأ ارتفاع الإطار تقريباً ليكون أكبر وأوضح
+        val nameSize = rowHeight.value * 0.6f
+        SurahName(surah, fontSize = nameSize.sp, color = Color.White, lineHeight = (nameSize * 1.1f).sp)
     }
 }
 
